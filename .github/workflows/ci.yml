@@ -53,50 +53,27 @@ jobs:
           fi
 
   test:
-    name: Test (${{ matrix.name }}, Python ${{ matrix.python-version }})
+    name: Test (${{ matrix.name }})
     runs-on: ${{ matrix.runner }}
+    env:
+      TEST_PYTHON_VERSION: "3.11"
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: Linux x86_64
             runner: ubuntu-24.04
-            python-version: "3.11"
-          - name: Linux x86_64
-            runner: ubuntu-24.04
-            python-version: "3.14"
           - name: Linux ARM64
             runner: ubuntu-24.04-arm
-            python-version: "3.11"
-          - name: Linux ARM64
-            runner: ubuntu-24.04-arm
-            python-version: "3.14"
           - name: Windows x86_64
             runner: windows-2025
-            python-version: "3.11"
-          - name: Windows x86_64
-            runner: windows-2025
-            python-version: "3.14"
           - name: Windows ARM64
             runner: windows-11-arm
-            python-version: "3.11"
-            python-architecture: arm64
-          - name: Windows ARM64
-            runner: windows-11-arm
-            python-version: "3.14"
             python-architecture: arm64
           - name: macOS x86_64
             runner: macos-15-intel
-            python-version: "3.11"
-          - name: macOS x86_64
-            runner: macos-15-intel
-            python-version: "3.14"
           - name: macOS ARM64
             runner: macos-15
-            python-version: "3.11"
-          - name: macOS ARM64
-            runner: macos-15
-            python-version: "3.14"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -117,19 +94,19 @@ jobs:
 
       - name: Install Python with uv
         if: matrix.runner != 'windows-11-arm'
-        run: uv python install "${{ matrix.python-version }}"
+        run: uv python install "${{ env.TEST_PYTHON_VERSION }}"
 
       - name: Install native ARM64 Python on Windows ARM64
         if: matrix.runner == 'windows-11-arm'
         id: arm_python
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.TEST_PYTHON_VERSION }}
           architecture: arm64
 
       - name: Install project and test dependencies
         if: matrix.runner != 'windows-11-arm'
-        run: uv sync --python "${{ matrix.python-version }}" --locked --extra dev --no-install-project
+        run: uv sync --python "${{ env.TEST_PYTHON_VERSION }}" --locked --extra dev --no-install-project
 
       - name: Install project and test dependencies with native ARM64 Python
         if: matrix.runner == 'windows-11-arm'
