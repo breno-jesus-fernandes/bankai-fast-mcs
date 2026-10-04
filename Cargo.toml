@@ -1,7 +1,10 @@
 [package]
 name = "bankai-fast-mcs"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2024"
+license = "MIT"
+description = "Rust core and PyO3 bindings for bankai-fast-mcs."
+repository = "https://github.com/breno-jesus-fernandes/bankai-fast-mcs"
 
 [lib]
 name = "_native"

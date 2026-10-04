@@ -20,6 +20,8 @@ htmlcov/
 # Rust
 /target/
 Cargo.lock
+# Keep the application lockfile tracked for reproducible builds and audits.
+!/Cargo.lock
 **/*.rs.bk
 *.pdb
 
