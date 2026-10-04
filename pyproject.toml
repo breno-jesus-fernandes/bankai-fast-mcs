@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.15,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "bankai-fast-mcs"
+version = "0.1.0"
+description = "High-performance Rust and Python implementation of the Model Confidence Set."
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+dev = ["maturin>=1.15,<2.0", "pytest>=8.0"]
+
+[tool.maturin]
+python-source = "python"
+module-name = "bankai_fast_mcs._native"
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
