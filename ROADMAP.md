@@ -4,9 +4,9 @@
 - [x] Set up `cargo test`, `cargo bench` (Criterion), and `pytest`.
 
 ## Phase 2: Core Algorithm (Rust)
-- [ ] Implement the 1-pass and 2-pass vector updating rules (O(M^2) time complexity).
-- [ ] Implement cache-friendly dense matrix loops.
-- [ ] Implement Rayon parallelization for the bootstrap block.
+- [x] Implement the 1-pass and 2-pass vector updating rules (O(M^2) time complexity).
+- [x] Implement cache-friendly dense matrix loops.
+- [x] Implement Rayon parallelization for the bootstrap block.
 
 ## Phase 3: Python Interop (NumPy Core)
 - [ ] Expose the `ModelConfidenceSet` API class to Python.
