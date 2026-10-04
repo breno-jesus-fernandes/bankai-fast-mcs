@@ -96,3 +96,7 @@ Benchmark results against the academic Python implementation are available in [b
 ## License
 
 See [LICENSE](LICENSE).
+
+## Colab benchmark
+
+Run the [4,800-model article benchmark in Google Colab](https://colab.research.google.com/github/breno-jesus-fernandes/bankai-fast-mcs/blob/notebooks/article-4800-model-benchmark/notebooks/article_4800_models_benchmark.ipynb).
