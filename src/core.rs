@@ -4,6 +4,76 @@ use std::fmt::{Display, Formatter};
 use ndarray::ArrayView2;
 use rayon::prelude::*;
 
+pub trait LossMatrix: Sync {
+    fn observations(&self) -> usize;
+    fn models(&self) -> usize;
+    fn get(&self, observation: usize, model: usize) -> f64;
+}
+
+impl LossMatrix for ArrayView2<'_, f64> {
+    #[inline]
+    fn observations(&self) -> usize {
+        self.nrows()
+    }
+
+    #[inline]
+    fn models(&self) -> usize {
+        self.ncols()
+    }
+
+    #[inline]
+    fn get(&self, observation: usize, model: usize) -> f64 {
+        self[(observation, model)]
+    }
+}
+
+pub struct SegmentedLossMatrix<'a> {
+    matrices: Vec<ArrayView2<'a, f64>>,
+    model_locations: Vec<(usize, usize)>,
+    observations: usize,
+}
+
+impl<'a> SegmentedLossMatrix<'a> {
+    pub fn new(matrices: Vec<ArrayView2<'a, f64>>) -> Result<Self, CoreError> {
+        let observations = matrices
+            .first()
+            .ok_or(CoreError::InvalidShape(
+                "at least one losses array is required",
+            ))?
+            .nrows();
+        let mut model_locations = Vec::new();
+        for (matrix_index, matrix) in matrices.iter().enumerate() {
+            if matrix.nrows() != observations {
+                return Err(CoreError::InvalidShape(
+                    "all losses arrays must have the same observation count",
+                ));
+            }
+            model_locations.extend((0..matrix.ncols()).map(|model| (matrix_index, model)));
+        }
+        Ok(Self {
+            matrices,
+            model_locations,
+            observations,
+        })
+    }
+}
+
+impl LossMatrix for SegmentedLossMatrix<'_> {
+    fn observations(&self) -> usize {
+        self.observations
+    }
+
+    fn models(&self) -> usize {
+        self.model_locations.len()
+    }
+
+    #[inline]
+    fn get(&self, observation: usize, model: usize) -> f64 {
+        let (matrix, local_model) = self.model_locations[model];
+        self.matrices[matrix][(observation, local_model)]
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Algorithm {
     OnePass,
@@ -57,12 +127,13 @@ pub struct McsResult {
 }
 
 /// Run the fast MCS updating algorithm on borrowed dense loss and bootstrap views.
-pub fn run_fast_mcs(
-    losses: ArrayView2<'_, f64>,
+pub fn run_fast_mcs<L: LossMatrix>(
+    losses: &L,
     bootstrap_indices: ArrayView2<'_, i64>,
     algorithm: Algorithm,
 ) -> Result<McsResult, CoreError> {
-    let (observations, models) = losses.dim();
+    let observations = losses.observations();
+    let models = losses.models();
     let (index_observations, bootstraps) = bootstrap_indices.dim();
     if observations == 0 || models == 0 {
         return Err(CoreError::InvalidShape(
@@ -91,7 +162,7 @@ pub fn run_fast_mcs(
             for observation in 0..observations {
                 let sampled_observation = bootstrap_indices[(observation, bootstrap)] as usize;
                 for model in 0..models {
-                    means[model] += losses[(sampled_observation, model)];
+                    means[model] += losses.get(sampled_observation, model);
                 }
             }
             let inverse_observations = 1.0 / observations as f64;
@@ -110,7 +181,7 @@ pub fn run_fast_mcs(
         let mut means = vec![0.0; models];
         for observation in 0..observations {
             for model in 0..models {
-                means[model] += losses[(observation, model)];
+                means[model] += losses.get(observation, model);
             }
         }
         for mean in &mut means {
@@ -192,22 +263,22 @@ pub fn run_fast_mcs(
 
 /// Pairwise statistics for one candidate against the listed existing models.
 /// Bootstrap t-statistics are returned in row-major `[bootstrap][existing model]` order.
-fn pair_statistics(
-    losses: ArrayView2<'_, f64>,
+fn pair_statistics<L: LossMatrix>(
+    losses: &L,
     bootstrap_means: &[f64],
     bootstraps: usize,
     model: usize,
     existing_models: &[usize],
 ) -> (Vec<f64>, Vec<f64>) {
-    let observations = losses.nrows();
-    let models = losses.ncols();
+    let observations = losses.observations();
+    let models = losses.models();
     let pair_count = existing_models.len();
     let mut mean_differences = vec![0.0; pair_count];
 
     for observation in 0..observations {
-        let candidate_loss = losses[(observation, model)];
+        let candidate_loss = losses.get(observation, model);
         for (column, &existing_model) in existing_models.iter().enumerate() {
-            mean_differences[column] += losses[(observation, existing_model)] - candidate_loss;
+            mean_differences[column] += losses.get(observation, existing_model) - candidate_loss;
         }
     }
     for difference in &mut mean_differences {

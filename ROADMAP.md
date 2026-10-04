@@ -9,12 +9,9 @@
 - [x] Implement Rayon parallelization for the bootstrap block.
 
 ## Phase 3: Python Interop (NumPy Core)
-- [ ] Expose the `ModelConfidenceSet` API class to Python.
-- [ ] Implement zero-copy PyArray ingestion via `rust-numpy`.
+- [x] Expose the `ModelConfidenceSet` API class to Python.
+- [x] Implement zero-copy PyArray ingestion via `rust-numpy`.
 
 ## Phase 4: Parity & Benchmarking
 - [ ] Validate statistical output parity (p-values, rankings) against the original academic Python repo.
 - [ ] Benchmark at M=2000 and M=5000 to prove massive performance gains.
-
-## Phase 5: Future Proofing (Polars)
-- [ ] Design an endpoint to accept Polars DataFrames and extract dense matrices via Arrow with minimal cost.

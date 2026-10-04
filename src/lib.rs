@@ -1,3 +1,4 @@
+mod api;
 mod core;
 
 use numpy::PyReadonlyArray2;
@@ -13,7 +14,8 @@ fn run_fast_mcs_py(
 ) -> PyResult<(Vec<f64>, Vec<usize>, Vec<f64>)> {
     let algorithm = core::Algorithm::parse(algorithm)
         .map_err(|error| PyValueError::new_err(error.to_string()))?;
-    let result = core::run_fast_mcs(losses.as_array(), bootstrap_indices.as_array(), algorithm)
+    let loss_view = losses.as_array();
+    let result = core::run_fast_mcs(&loss_view, bootstrap_indices.as_array(), algorithm)
         .map_err(|error| PyValueError::new_err(error.to_string()))?;
 
     Ok((
@@ -27,5 +29,6 @@ fn run_fast_mcs_py(
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(run_fast_mcs_py, module)?)?;
+    module.add_class::<api::ModelConfidenceSet>()?;
     Ok(())
 }
