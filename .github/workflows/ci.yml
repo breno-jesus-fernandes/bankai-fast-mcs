@@ -125,6 +125,55 @@ jobs:
       - name: Run Rust tests
         run: uv run --no-sync cargo test --locked
 
+  coverage:
+    name: Coverage (Python and Rust)
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install Rust coverage tools
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov --version 0.9.1 --locked
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: 0.12.21
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install project and coverage dependencies
+        run: uv sync --python 3.11 --locked --extra dev --no-install-project
+
+      - name: Add uv Python shared library to runtime path
+        run: echo "LD_LIBRARY_PATH=$(uv run --no-sync python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))'):${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
+      - name: Build and install the native extension
+        run: uv run --no-sync maturin develop --release --locked
+
+      - name: Run Python tests with coverage
+        run: uv run --no-sync pytest -q --cov=bankai_fast_mcs --cov-report=xml:coverage-python.xml
+
+      - name: Run Rust tests with coverage
+        run: uv run --no-sync cargo llvm-cov --lcov --output-path coverage-rust.lcov
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-python.xml,coverage-rust.lcov
+          fail_ci_if_error: false
+
   wheels:
     name: Build wheel (${{ matrix.platform.name }}, Python ${{ matrix.python-version }})
     needs: test
