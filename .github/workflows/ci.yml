@@ -93,8 +93,16 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Install Python with uv
-        if: matrix.runner != 'windows-11-arm'
+        if: matrix.runner != 'windows-11-arm' && matrix.runner != 'windows-2025'
         run: uv python install "${{ env.TEST_PYTHON_VERSION }}"
+
+      - name: Install native x86_64 Python on Windows x86_64
+        if: matrix.runner == 'windows-2025'
+        id: x64_python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: ${{ env.TEST_PYTHON_VERSION }}
+          architecture: x64
 
       - name: Install native ARM64 Python on Windows ARM64
         if: matrix.runner == 'windows-11-arm'
@@ -105,8 +113,12 @@ jobs:
           architecture: arm64
 
       - name: Install project and test dependencies
-        if: matrix.runner != 'windows-11-arm'
+        if: matrix.runner != 'windows-11-arm' && matrix.runner != 'windows-2025'
         run: uv sync --python "${{ env.TEST_PYTHON_VERSION }}" --locked --extra dev --no-install-project
+
+      - name: Install project and test dependencies with native x86_64 Python
+        if: matrix.runner == 'windows-2025'
+        run: uv sync --python "${{ steps.x64_python.outputs.python-path }}" --locked --extra dev --no-install-project
 
       - name: Install project and test dependencies with native ARM64 Python
         if: matrix.runner == 'windows-11-arm'
