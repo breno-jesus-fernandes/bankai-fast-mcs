@@ -2,8 +2,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 fn criterion_harness_smoke(c: &mut Criterion) {
-    c.bench_function("criterion_harness_smoke", |b| {
-        b.iter(|| black_box(1_usize + 1))
+    let values: Vec<u64> = (0..1024).collect();
+    c.bench_function("criterion_harness_reduction", |b| {
+        b.iter(|| black_box(black_box(&values).iter().copied().sum::<u64>()))
     });
 }
 

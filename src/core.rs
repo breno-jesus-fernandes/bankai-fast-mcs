@@ -177,27 +177,34 @@ pub fn run_fast_mcs<L: LossMatrix>(
     let mut previous_ranking = Vec::new();
     let mut processing_order: Vec<usize> = (0..models).collect();
 
+    let mut model_means = vec![0.0; models];
+    for observation in 0..observations {
+        for model in 0..models {
+            model_means[model] += losses.get(observation, model);
+        }
+    }
+    for mean in &mut model_means {
+        *mean /= observations as f64;
+    }
+
     if algorithm == Algorithm::OnePass {
-        let mut means = vec![0.0; models];
-        for observation in 0..observations {
-            for model in 0..models {
-                means[model] += losses.get(observation, model);
-            }
-        }
-        for mean in &mut means {
-            *mean /= observations as f64;
-        }
         processing_order.sort_by(|left, right| {
-            means[*left]
-                .total_cmp(&means[*right])
+            model_means[*left]
+                .total_cmp(&model_means[*right])
                 .then_with(|| left.cmp(right))
         });
     }
 
     let mut ranking = Vec::with_capacity(models);
     for model in processing_order {
-        let (pair_scores, pair_boot_t) =
-            pair_statistics(losses, &bootstrap_means, bootstraps, model, &processed);
+        let (pair_scores, pair_boot_t) = pair_statistics(
+            &model_means,
+            &bootstrap_means,
+            models,
+            bootstraps,
+            model,
+            &processed,
+        );
 
         let current_score = pair_scores
             .iter()
@@ -236,19 +243,26 @@ pub fn run_fast_mcs<L: LossMatrix>(
     }
 
     if algorithm == Algorithm::TwoPass {
+        let mut rank_by_model = vec![0; models];
+        for (rank, &model) in ranking.iter().enumerate() {
+            rank_by_model[model] = rank;
+        }
         for rank_position in 1..models {
             let model = ranking[rank_position];
-            let better_models = &ranking[..rank_position];
-            let (_, pair_boot_t) =
-                pair_statistics(losses, &bootstrap_means, bootstraps, model, better_models);
-            let pair_count = better_models.len();
+            let better_models: Vec<usize> = (0..models)
+                .filter(|&candidate| rank_by_model[candidate] < rank_position)
+                .collect();
+            let maxima = pair_max_boot_statistics(
+                &model_means,
+                &bootstrap_means,
+                models,
+                bootstraps,
+                model,
+                &better_models,
+            );
             for bootstrap in 0..bootstraps {
-                let row = &pair_boot_t[bootstrap * pair_count..(bootstrap + 1) * pair_count];
-                let maximum = row
-                    .iter()
-                    .fold(0.0_f64, |maximum, value| maximum.max(value.abs()));
                 let previous = t_boot_distribution[bootstrap * models + ranking[rank_position - 1]];
-                t_boot_distribution[bootstrap * models + model] = maximum.max(previous);
+                t_boot_distribution[bootstrap * models + model] = maxima[bootstrap].max(previous);
             }
         }
     }
@@ -263,27 +277,19 @@ pub fn run_fast_mcs<L: LossMatrix>(
 
 /// Pairwise statistics for one candidate against the listed existing models.
 /// Bootstrap t-statistics are returned in row-major `[bootstrap][existing model]` order.
-fn pair_statistics<L: LossMatrix>(
-    losses: &L,
+fn pair_statistics(
+    model_means: &[f64],
     bootstrap_means: &[f64],
+    models: usize,
     bootstraps: usize,
     model: usize,
     existing_models: &[usize],
 ) -> (Vec<f64>, Vec<f64>) {
-    let observations = losses.observations();
-    let models = losses.models();
     let pair_count = existing_models.len();
-    let mut mean_differences = vec![0.0; pair_count];
-
-    for observation in 0..observations {
-        let candidate_loss = losses.get(observation, model);
-        for (column, &existing_model) in existing_models.iter().enumerate() {
-            mean_differences[column] += losses.get(observation, existing_model) - candidate_loss;
-        }
-    }
-    for difference in &mut mean_differences {
-        *difference /= observations as f64;
-    }
+    let mean_differences: Vec<f64> = existing_models
+        .iter()
+        .map(|&existing_model| model_means[existing_model] - model_means[model])
+        .collect();
 
     let mut variances = vec![0.0; pair_count];
     for bootstrap in 0..bootstraps {
@@ -315,6 +321,71 @@ fn pair_statistics<L: LossMatrix>(
     }
 
     (scores, boot_t)
+}
+
+fn pair_max_boot_statistics(
+    model_means: &[f64],
+    bootstrap_means: &[f64],
+    models: usize,
+    bootstraps: usize,
+    model: usize,
+    existing_models: &[usize],
+) -> Vec<f64> {
+    let mean_differences: Vec<f64> = existing_models
+        .iter()
+        .map(|&existing_model| model_means[existing_model] - model_means[model])
+        .collect();
+    let variance_for_column = |(column, &existing_model): (usize, &usize)| {
+        let mut variance = 0.0;
+        for bootstrap in 0..bootstraps {
+            let offset = bootstrap * models;
+            let difference = bootstrap_means[offset + existing_model]
+                - bootstrap_means[offset + model]
+                - mean_differences[column];
+            variance += difference * difference;
+        }
+        variance
+    };
+    let work = bootstraps.saturating_mul(existing_models.len());
+    let variances: Vec<f64> = if work >= 16_384 {
+        existing_models
+            .par_iter()
+            .enumerate()
+            .map(variance_for_column)
+            .collect()
+    } else {
+        existing_models
+            .iter()
+            .enumerate()
+            .map(variance_for_column)
+            .collect()
+    };
+    let mut inverse_standard_deviations = vec![0.0; existing_models.len()];
+    for (column, variance) in variances.into_iter().enumerate() {
+        let standard_deviation = (variance / bootstraps as f64).sqrt();
+        inverse_standard_deviations[column] = 1.0 / standard_deviation;
+    }
+
+    let maximum_for_bootstrap = |bootstrap: usize| {
+        let offset = bootstrap * models;
+        let mut maximum = 0.0_f64;
+        for (column, &existing_model) in existing_models.iter().enumerate() {
+            let difference = bootstrap_means[offset + existing_model]
+                - bootstrap_means[offset + model]
+                - mean_differences[column];
+            maximum = maximum.max((difference * inverse_standard_deviations[column]).abs());
+        }
+        maximum
+    };
+    let maxima: Vec<f64> = if work >= 16_384 {
+        (0..bootstraps)
+            .into_par_iter()
+            .map(maximum_for_bootstrap)
+            .collect()
+    } else {
+        (0..bootstraps).map(maximum_for_bootstrap).collect()
+    };
+    maxima
 }
 
 #[allow(clippy::too_many_arguments)]

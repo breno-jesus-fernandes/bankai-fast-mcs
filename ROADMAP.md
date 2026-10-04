@@ -13,5 +13,5 @@
 - [x] Implement zero-copy PyArray ingestion via `rust-numpy`.
 
 ## Phase 4: Parity & Benchmarking
-- [ ] Validate statistical output parity (p-values, rankings) against the original academic Python repo.
-- [ ] Benchmark at M=2000 and M=5000 to prove massive performance gains.
+- [x] Validate statistical output parity (p-values, rankings) against the original academic Python repo.
+- [x] Benchmark at M=2000 and M=5000 to prove massive performance gains.
