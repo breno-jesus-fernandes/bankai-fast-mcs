@@ -32,4 +32,4 @@ Enable GitHub's dependency graph, Dependabot alerts, and private vulnerability r
 
 GitHub repository rules and security settings must be enabled in the repository settings; workflow files cannot turn on branch protection or vulnerability reporting by themselves.
 
-For a PyPI release, configure Trusted Publishing for this GitHub repository, the `CI and release artifacts` workflow, and the `pypi` environment. The workflow publishes only when a `v*` tag matches the version in `pyproject.toml`, the version is not already on PyPI, CI succeeds, and artifact provenance has been generated. The first release tag should be `v0.1.0a1`; PyPI will display it as version `0.1.0a1` and mark it as a pre-release.
+See [RELEASING.md](RELEASING.md) for the exact PyPI Trusted Publisher values, GitHub environment and tag rules, and first-release steps. PyPI and GitHub account settings cannot be configured from files in this repository.
