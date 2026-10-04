@@ -14,11 +14,18 @@ Exceptions must be narrowly scoped and documented beside the scanner configurati
 
 Enable GitHub's dependency graph, Dependabot alerts, and private vulnerability reporting. Require pull requests and these checks on `main`:
 
-- `Test (Linux x86_64)`
-- `Test (Linux ARM64)`
-- `Test (Windows x86_64)`
-- `Test (macOS x86_64)`
-- `Test (macOS ARM64)`
+- `Test (Linux x86_64, Python 3.11)`
+- `Test (Linux x86_64, Python 3.14)`
+- `Test (Linux ARM64, Python 3.11)`
+- `Test (Linux ARM64, Python 3.14)`
+- `Test (Windows x86_64, Python 3.11)`
+- `Test (Windows x86_64, Python 3.14)`
+- `Test (Windows ARM64, Python 3.11)`
+- `Test (Windows ARM64, Python 3.14)`
+- `Test (macOS x86_64, Python 3.11)`
+- `Test (macOS x86_64, Python 3.14)`
+- `Test (macOS ARM64, Python 3.11)`
+- `Test (macOS ARM64, Python 3.14)`
 - `Rust dependency audit`
 - `Python dependency audit`
 - `Dependency Review`

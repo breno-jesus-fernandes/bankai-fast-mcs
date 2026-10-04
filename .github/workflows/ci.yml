@@ -47,7 +47,7 @@ jobs:
           fi
 
   test:
-    name: Test (${{ matrix.name }})
+    name: Test (${{ matrix.name }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -55,14 +55,40 @@ jobs:
         include:
           - name: Linux x86_64
             runner: ubuntu-24.04
+            python-version: "3.11"
+          - name: Linux x86_64
+            runner: ubuntu-24.04
+            python-version: "3.14"
           - name: Linux ARM64
             runner: ubuntu-24.04-arm
+            python-version: "3.11"
+          - name: Linux ARM64
+            runner: ubuntu-24.04-arm
+            python-version: "3.14"
           - name: Windows x86_64
             runner: windows-2025
+            python-version: "3.11"
+          - name: Windows x86_64
+            runner: windows-2025
+            python-version: "3.14"
+          - name: Windows ARM64
+            runner: windows-11-arm
+            python-version: "3.11"
+          - name: Windows ARM64
+            runner: windows-11-arm
+            python-version: "3.14"
           - name: macOS x86_64
             runner: macos-15-intel
+            python-version: "3.11"
+          - name: macOS x86_64
+            runner: macos-15-intel
+            python-version: "3.14"
           - name: macOS ARM64
             runner: macos-15
+            python-version: "3.11"
+          - name: macOS ARM64
+            runner: macos-15
+            python-version: "3.14"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -82,10 +108,10 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Install Python
-        run: uv python install 3.11
+        run: uv python install "${{ matrix.python-version }}"
 
       - name: Install project and test dependencies
-        run: uv sync --python 3.11 --locked --extra dev --no-install-project
+        run: uv sync --python "${{ matrix.python-version }}" --locked --extra dev --no-install-project
 
       - name: Add uv Python shared library to runtime path
         if: matrix.runner == 'ubuntu-24.04' || matrix.runner == 'ubuntu-24.04-arm'
@@ -101,13 +127,13 @@ jobs:
         run: uv run --no-sync cargo test --locked
 
   wheels:
-    name: Build wheel (${{ matrix.name }})
+    name: Build wheel (${{ matrix.platform.name }}, Python ${{ matrix.python-version }})
     needs: test
-    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        include:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        platform:
           - name: Linux x86_64
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
@@ -120,6 +146,10 @@ jobs:
             runner: windows-2025
             target: x86_64-pc-windows-msvc
             manylinux: "off"
+          - name: Windows ARM64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            manylinux: "off"
           - name: macOS x86_64
             runner: macos-15-intel
             target: x86_64-apple-darwin
@@ -128,22 +158,39 @@ jobs:
             runner: macos-15
             target: aarch64-apple-darwin
             manylinux: "off"
+    runs-on: ${{ matrix.platform.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Build wheel
+      - name: Set up Python for native platform build
+        if: matrix.platform.manylinux == 'off'
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build manylinux wheel
+        if: matrix.platform.manylinux != 'off'
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           command: build
-          target: ${{ matrix.target }}
-          manylinux: ${{ matrix.manylinux }}
+          target: ${{ matrix.platform.target }}
+          manylinux: ${{ matrix.platform.manylinux }}
           maturin-version: v1.15.0
-          args: --release --locked --out dist
+          args: --release --locked --out dist -i python${{ matrix.python-version }}
+
+      - name: Build native platform wheel
+        if: matrix.platform.manylinux == 'off'
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        with:
+          command: build
+          target: ${{ matrix.platform.target }}
+          maturin-version: v1.15.0
+          args: --release --locked --out dist -i python
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-${{ matrix.target }}
+          name: release-${{ matrix.platform.target }}-py${{ matrix.python-version }}
           path: dist/*.whl
           if-no-files-found: error
           retention-days: 14
