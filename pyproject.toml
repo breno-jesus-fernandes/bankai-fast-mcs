@@ -6,6 +6,7 @@ build-backend = "maturin"
 name = "bankai-fast-mcs"
 version = "0.1.0a1"
 description = "High-performance Rust and Python implementation of the Model Confidence Set."
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 classifiers = [

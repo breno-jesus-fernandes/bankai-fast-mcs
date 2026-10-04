@@ -214,3 +214,195 @@ impl ModelConfidenceSet {
         self.verbose
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+
+    #[test]
+    fn constructor_and_getters_expose_empty_unprocessed_state() {
+        Python::initialize();
+        Python::attach(|py| {
+            crate::test_support::add_project_python_paths(py);
+            let mut model = ModelConfidenceSet::new(py, None, None, false).unwrap();
+
+            assert!(!model.verbose());
+            assert_eq!(model.t_score(py).readonly().as_array().len(), 0);
+            assert_eq!(model.elimination_order(py).readonly().as_array().len(), 0);
+            assert_eq!(
+                model.t_boot_distribution(py).readonly().as_array().dim(),
+                (0, 0)
+            );
+            assert_eq!(model.p_values(py).readonly().as_array().len(), 0);
+            assert!(
+                model
+                    .get_mcs(py, 0.05)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("run must complete")
+            );
+            assert!(
+                model
+                    .run(py, 10, 2, "block", "2-pass")
+                    .unwrap_err()
+                    .to_string()
+                    .contains("no losses have been added")
+            );
+        });
+    }
+
+    #[test]
+    fn adding_losses_rejects_empty_arrays_and_inconsistent_observation_counts() {
+        Python::initialize();
+        Python::attach(|py| {
+            crate::test_support::add_project_python_paths(py);
+            let mut model = ModelConfidenceSet::new(py, None, Some(11), true).unwrap();
+            let empty_observations = Array2::<f64>::zeros((0, 2)).into_pyarray(py).unbind();
+            assert!(
+                model
+                    .add_losses(py, empty_observations)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("at least one observation and one model")
+            );
+
+            let empty_models = Array2::<f64>::zeros((3, 0)).into_pyarray(py).unbind();
+            assert!(
+                model
+                    .add_losses(py, empty_models)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("at least one observation and one model")
+            );
+
+            let first = array![[1.0, 2.0], [3.0, 4.0]].into_pyarray(py).unbind();
+            model.add_losses(py, first).unwrap();
+            let mismatched = array![[1.0], [2.0], [3.0]].into_pyarray(py).unbind();
+            assert!(
+                model
+                    .add_losses(py, mismatched)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("same observation count")
+            );
+        });
+    }
+
+    #[test]
+    fn run_validates_parameters_and_algorithm_before_bootstrapping() {
+        Python::initialize();
+        Python::attach(|py| {
+            crate::test_support::add_project_python_paths(py);
+            let losses = array![[1.0, 2.0], [2.0, 1.0], [3.0, 4.0]]
+                .into_pyarray(py)
+                .unbind();
+            let mut model = ModelConfidenceSet::new(py, Some(losses), Some(11), true).unwrap();
+
+            for (bootstraps, block_size) in [(0, 2), (10, 0)] {
+                assert!(
+                    model
+                        .run(py, bootstraps, block_size, "block", "2-pass")
+                        .unwrap_err()
+                        .to_string()
+                        .contains("B and b must both be positive")
+                );
+            }
+            assert!(
+                model
+                    .run(py, 10, 2, "block", "approximate")
+                    .unwrap_err()
+                    .to_string()
+                    .contains("algorithm must be")
+            );
+        });
+    }
+
+    #[test]
+    fn run_and_get_mcs_populate_results_and_reject_invalid_alpha() {
+        Python::initialize();
+        Python::attach(|py| {
+            crate::test_support::add_project_python_paths(py);
+            let losses = array![
+                [1.0, 2.1, 3.2],
+                [1.4, 2.5, 3.0],
+                [0.8, 2.8, 3.5],
+                [1.7, 2.0, 3.1],
+                [1.2, 2.3, 3.7],
+            ]
+            .into_pyarray(py)
+            .unbind();
+            let mut model = ModelConfidenceSet::new(py, Some(losses), Some(7), false).unwrap();
+            model.run(py, 24, 2, "stationary", "1-pass").unwrap();
+
+            assert_eq!(model.t_score(py).readonly().as_array().len(), 3);
+            assert_eq!(model.elimination_order(py).readonly().as_array().len(), 3);
+            assert_eq!(
+                model.t_boot_distribution(py).readonly().as_array().dim(),
+                (24, 3)
+            );
+            assert!(
+                model
+                    .get_mcs(py, f64::NAN)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("alpha must be between 0 and 1")
+            );
+
+            let (included, excluded) = model.get_mcs(py, 0.0).unwrap();
+            assert_eq!(included.readonly().as_array().len(), 3);
+            assert_eq!(excluded.readonly().as_array().len(), 0);
+            assert_eq!(model.p_values(py).readonly().as_array().len(), 3);
+        });
+    }
+
+    #[test]
+    fn get_mcs_uses_cumulative_p_values_to_split_included_and_excluded_models() {
+        Python::initialize();
+        Python::attach(|py| {
+            crate::test_support::add_project_python_paths(py);
+            let mut model = ModelConfidenceSet::new(py, None, None, false).unwrap();
+            model.model_count = 3;
+            model.bootstraps = 2;
+            model.is_processed = true;
+            model.elimination_order_values = vec![0, 1, 2];
+            model.t_score_values = vec![2.0, 2.0, 1.0];
+            model.t_boot_distribution_values = vec![1.0, 1.0, 1.0, 3.0, 1.5, 2.0];
+
+            let (included, excluded) = model.get_mcs(py, 0.75).unwrap();
+
+            assert_eq!(included.readonly().as_array().to_vec(), vec![2]);
+            assert_eq!(excluded.readonly().as_array().to_vec(), vec![0, 1]);
+            assert_eq!(
+                model.p_values(py).readonly().as_array().to_vec(),
+                vec![0.5, 0.5, 1.0]
+            );
+        });
+    }
+
+    #[test]
+    fn adding_more_models_after_run_clears_previous_results() {
+        Python::initialize();
+        Python::attach(|py| {
+            crate::test_support::add_project_python_paths(py);
+            let first = array![[1.0, 2.0], [2.0, 1.0], [3.0, 4.0]]
+                .into_pyarray(py)
+                .unbind();
+            let mut model = ModelConfidenceSet::new(py, Some(first), Some(19), false).unwrap();
+            model.run(py, 12, 2, "block", "2-pass").unwrap();
+            model.get_mcs(py, 0.05).unwrap();
+            assert_eq!(model.p_values(py).readonly().as_array().len(), 2);
+
+            let second = array![[4.0], [2.0], [3.0]].into_pyarray(py).unbind();
+            model.add_losses(py, second).unwrap();
+
+            assert_eq!(model.t_score(py).readonly().as_array().len(), 0);
+            assert_eq!(model.elimination_order(py).readonly().as_array().len(), 0);
+            assert_eq!(
+                model.t_boot_distribution(py).readonly().as_array().dim(),
+                (0, 3)
+            );
+            assert_eq!(model.p_values(py).readonly().as_array().len(), 0);
+        });
+    }
+}
