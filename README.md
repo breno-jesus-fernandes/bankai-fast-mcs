@@ -2,23 +2,16 @@
 
 Bankai Fast MCS is a high-performance implementation of the **Model Confidence Set (MCS)** with a native Rust core and a simple Python API. It provides 1-pass and 2-pass algorithms for comparing the predictive performance of multiple models using bootstrap samples.
 
+In our benchmark, the Rust 2-pass implementation ran up to **6.26× faster** than the academic Python reference, using 5,000 models, 250 observations, and 100 bootstrap replications ([results](benchmarks/RESULTS.md)).
+
 ⚠️ Bankai Fast MCS is currently in Alpha. The API may change.
 
 ## Install
 
-Python 3.11 or newer is required. The first planned PyPI pre-release is `0.1.0a1`; after it is published, install it with:
+Python 3.11 or newer is required. Install the alpha release from PyPI with:
 
 ```bash
-python -m pip install --pre bankai-fast-mcs==0.1.0a1
-```
-
-To build the package from source, install Rust, Cargo, and `uv`:
-
-```bash
-git clone https://github.com/breno-jesus-fernandes/bankai-fast-mcs.git
-cd bankai-fast-mcs
-uv sync --extra dev
-uv run maturin develop --release
+python -m pip install --pre bankai-fast-mcs
 ```
 
 ## Quick start
