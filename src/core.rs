@@ -466,3 +466,261 @@ fn update_one_pass_distribution(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::{Array2, array};
+
+    #[test]
+    fn parses_supported_algorithms_and_reports_unknown_names() {
+        assert_eq!(Algorithm::parse("1-pass").unwrap(), Algorithm::OnePass);
+        assert_eq!(Algorithm::parse("2-pass").unwrap(), Algorithm::TwoPass);
+
+        let error = Algorithm::parse("other").unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "algorithm must be '1-pass' or '2-pass', got \"other\""
+        );
+    }
+
+    #[test]
+    fn segmented_loss_matrix_validates_and_maps_columns_across_blocks() {
+        let first = array![[1.0, 2.0], [3.0, 4.0]];
+        let second = array![[5.0], [6.0]];
+        let segmented = SegmentedLossMatrix::new(vec![first.view(), second.view()]).unwrap();
+
+        assert_eq!(segmented.observations(), 2);
+        assert_eq!(segmented.models(), 3);
+        assert_eq!(segmented.get(1, 0), 3.0);
+        assert_eq!(segmented.get(0, 1), 2.0);
+        assert_eq!(segmented.get(1, 2), 6.0);
+
+        assert!(matches!(
+            SegmentedLossMatrix::new(Vec::new()),
+            Err(CoreError::InvalidShape(
+                "at least one losses array is required"
+            ))
+        ));
+
+        let different_length = array![[7.0], [8.0], [9.0]];
+        assert!(matches!(
+            SegmentedLossMatrix::new(vec![first.view(), different_length.view()]),
+            Err(CoreError::InvalidShape(
+                "all losses arrays must have the same observation count"
+            ))
+        ));
+    }
+
+    #[test]
+    fn run_fast_mcs_rejects_empty_loss_dimensions_and_invalid_bootstrap_shapes() {
+        let no_observations = Array2::<f64>::zeros((0, 2));
+        let no_observation_indices = Array2::<i64>::zeros((0, 1));
+        assert!(matches!(
+            run_fast_mcs(
+                &no_observations.view(),
+                no_observation_indices.view(),
+                Algorithm::TwoPass
+            ),
+            Err(CoreError::InvalidShape(
+                "losses must contain at least one observation and one model"
+            ))
+        ));
+
+        let no_models = Array2::<f64>::zeros((2, 0));
+        let valid_indices = array![[0_i64], [1_i64]];
+        assert!(matches!(
+            run_fast_mcs(&no_models.view(), valid_indices.view(), Algorithm::TwoPass),
+            Err(CoreError::InvalidShape(
+                "losses must contain at least one observation and one model"
+            ))
+        ));
+
+        let losses = array![[1.0], [2.0]];
+        let wrong_observation_count = array![[0_i64]];
+        assert!(matches!(
+            run_fast_mcs(
+                &losses.view(),
+                wrong_observation_count.view(),
+                Algorithm::TwoPass
+            ),
+            Err(CoreError::InvalidShape(_))
+        ));
+
+        let no_bootstraps = Array2::<i64>::zeros((2, 0));
+        assert!(matches!(
+            run_fast_mcs(&losses.view(), no_bootstraps.view(), Algorithm::TwoPass),
+            Err(CoreError::InvalidShape(_))
+        ));
+
+        let shape_error = run_fast_mcs(
+            &losses.view(),
+            wrong_observation_count.view(),
+            Algorithm::TwoPass,
+        )
+        .unwrap_err();
+        assert_eq!(
+            shape_error.to_string(),
+            "bootstrap indices must have shape (observations, bootstraps) with nonzero bootstraps"
+        );
+    }
+
+    #[test]
+    fn run_fast_mcs_rejects_negative_and_out_of_range_indices() {
+        let losses = array![[1.0], [2.0]];
+        for index in [-1_i64, 2_i64] {
+            let indices = array![[index], [0_i64]];
+            assert!(matches!(
+                run_fast_mcs(&losses.view(), indices.view(), Algorithm::TwoPass),
+                Err(CoreError::InvalidBootstrapIndex {
+                    index: invalid,
+                    observations: 2
+                }) if invalid == index
+            ));
+        }
+    }
+
+    #[test]
+    fn single_model_result_has_one_rank_and_zero_test_statistics() {
+        let losses = array![[1.0], [2.0], [4.0]];
+        let indices = array![[0_i64, 1], [1, 2], [2, 0]];
+
+        for algorithm in [Algorithm::OnePass, Algorithm::TwoPass] {
+            let result = run_fast_mcs(&losses.view(), indices.view(), algorithm).unwrap();
+            assert_eq!(result.t_score, vec![0.0]);
+            assert_eq!(result.elimination_order, vec![0]);
+            assert_eq!(result.t_boot_distribution, vec![0.0, 0.0]);
+        }
+    }
+
+    #[test]
+    fn pairwise_scores_update_an_earlier_model_that_is_outperformed_later() {
+        let losses = array![[2.0, 1.0], [4.0, 1.5], [3.0, 2.0]];
+        let indices = array![[0_i64, 1], [1, 2], [2, 0]];
+
+        let result = run_fast_mcs(&losses.view(), indices.view(), Algorithm::TwoPass).unwrap();
+
+        assert!(result.t_score[0] > 0.0);
+        assert_eq!(result.elimination_order.len(), 2);
+    }
+
+    #[test]
+    fn pair_statistics_standardizes_mean_differences_and_bootstrap_deviations() {
+        let model_means = [1.0, 2.0];
+        let bootstrap_means = [0.0, 2.0, 2.0, 3.0];
+
+        let (scores, bootstrap_t) = pair_statistics(&model_means, &bootstrap_means, 2, 2, 0, &[1]);
+
+        let expected = 2.0_f64.sqrt();
+        assert!((scores[0] - expected).abs() < 1e-12);
+        assert!((bootstrap_t[0] - expected).abs() < 1e-12);
+        assert_eq!(bootstrap_t[1], 0.0);
+    }
+
+    #[test]
+    fn two_pass_parallel_pair_max_matches_direct_bootstrap_maxima() {
+        let models = 130;
+        let bootstraps = 128;
+        let model_means: Vec<f64> = (0..models).map(|model| model as f64 * 0.03).collect();
+        let mut bootstrap_means = Vec::with_capacity(bootstraps * models);
+        for bootstrap in 0..bootstraps {
+            for (model, mean) in model_means.iter().enumerate() {
+                bootstrap_means.push(
+                    mean + (bootstrap as f64 - (bootstraps as f64 - 1.0) / 2.0)
+                        * (model as f64 + 1.0)
+                        * 0.001,
+                );
+            }
+        }
+        let candidate = models - 1;
+        let existing_models: Vec<usize> = (0..candidate).collect();
+
+        let maxima = pair_max_boot_statistics(
+            &model_means,
+            &bootstrap_means,
+            models,
+            bootstraps,
+            candidate,
+            &existing_models,
+        );
+
+        let expected: Vec<f64> = (0..bootstraps)
+            .map(|bootstrap| {
+                existing_models
+                    .iter()
+                    .map(|&existing| {
+                        let mean_difference = model_means[existing] - model_means[candidate];
+                        let variance: f64 = (0..bootstraps)
+                            .map(|sample| {
+                                let offset = sample * models;
+                                let difference = bootstrap_means[offset + existing]
+                                    - bootstrap_means[offset + candidate]
+                                    - mean_difference;
+                                difference * difference
+                            })
+                            .sum();
+                        let offset = bootstrap * models;
+                        let difference = bootstrap_means[offset + existing]
+                            - bootstrap_means[offset + candidate]
+                            - mean_difference;
+                        (difference / (variance / bootstraps as f64).sqrt()).abs()
+                    })
+                    .fold(0.0_f64, f64::max)
+            })
+            .collect();
+        for (actual, expected) in maxima.iter().zip(expected) {
+            assert!((actual - expected).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn one_pass_distribution_keeps_previous_maximum_when_rank_does_not_change() {
+        let processed = [0, 1];
+        let ranking = [1, 0];
+        let previous_ranking = [0];
+        let pair_boot_t = [2.0, -1.0];
+        let t_score = [3.0, 1.0];
+        let mut distribution = [4.0, 0.0, 0.0, 0.0];
+
+        update_one_pass_distribution(
+            1,
+            &processed,
+            &ranking,
+            &previous_ranking,
+            &pair_boot_t,
+            &t_score,
+            &mut distribution,
+            2,
+            2,
+        );
+
+        assert_eq!(distribution, [4.0, 0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn one_pass_distribution_interpolates_when_ranking_positions_swap() {
+        let processed = [0, 1, 2];
+        let ranking = [1, 2, 0];
+        let previous_ranking = [0, 1];
+        let pair_boot_t = [2.0, 1.0, 1.0, -3.0];
+        let t_score = [2.0, 0.0, 1.0];
+        let mut distribution = [10.0, 6.0, 7.0, 7.0, 1.0, 3.0];
+
+        update_one_pass_distribution(
+            2,
+            &processed,
+            &ranking,
+            &previous_ranking,
+            &pair_boot_t,
+            &t_score,
+            &mut distribution,
+            2,
+            3,
+        );
+
+        assert_eq!(distribution[2], 6.0);
+        assert_eq!(distribution[5], 3.0);
+        assert_eq!(distribution[0], 8.0);
+        assert_eq!(distribution[3], 5.0);
+    }
+}
