@@ -11,7 +11,7 @@ In our benchmark, the Rust 2-pass implementation ran up to **6.26× faster** tha
 Python 3.11 or newer is required. Install the alpha release from PyPI with:
 
 ```bash
-python -m pip install --pre bankai-fast-mcs
+python -m pip install bankai-fast-mcs
 ```
 
 ## Quick start
