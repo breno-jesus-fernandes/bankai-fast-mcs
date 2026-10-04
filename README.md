@@ -1,4 +1,16 @@
 # 🔥 Bankai Fast MCS
+[![PyPI Latest Release](https://img.shields.io/pypi/v/bankai-fast-mcs.svg)](https://pypi.org/project/bankai-fast-mcs/)
+[![Package Status](https://img.shields.io/pypi/status/bankai-fast-mcs.svg)](https://pypi.org/project/bankai-fast-mcs/)
+[![Python versions](https://img.shields.io/pypi/pyversions/bankai-fast-mcs.svg)](https://pypi.org/project/bankai-fast-mcs/)
+[![uv managed](https://img.shields.io/badge/uv-managed-blue)](https://docs.astral.sh/uv/)
+[![Downloads](https://static.pepy.tech/badge/bankai-fast-mcs)](https://pepy.tech/project/bankai-fast-mcs)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/breno-jesus-fernandes/bankai-fast-mcs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/breno-jesus-fernandes/bankai-fast-mcs/actions/workflows/ci.yml)
+[![Dependency security](https://github.com/breno-jesus-fernandes/bankai-fast-mcs/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/breno-jesus-fernandes/bankai-fast-mcs/actions/workflows/security.yml)
+[![Coverage](https://codecov.io/gh/breno-jesus-fernandes/bankai-fast-mcs/branch/main/graph/badge.svg)](https://codecov.io/gh/breno-jesus-fernandes/bankai-fast-mcs)
+[![GitHub Release](https://img.shields.io/github/v/release/breno-jesus-fernandes/bankai-fast-mcs?include_prereleases)](https://github.com/breno-jesus-fernandes/bankai-fast-mcs/releases)
+[![PyPI deployment](https://img.shields.io/github/deployments/breno-jesus-fernandes/bankai-fast-mcs/pypi?label=PyPI%20deployment)](https://github.com/breno-jesus-fernandes/bankai-fast-mcs/deployments)
+[![GitHub stars](https://img.shields.io/github/stars/breno-jesus-fernandes/bankai-fast-mcs.svg?style=social)](https://github.com/breno-jesus-fernandes/bankai-fast-mcs)
 
 Bankai Fast MCS is a high-performance implementation of the **Model Confidence Set (MCS)** with a native Rust core and a simple Python API. It provides 1-pass and 2-pass algorithms for comparing the predictive performance of multiple models using bootstrap samples.
 
@@ -11,7 +23,7 @@ In our benchmark, the Rust 2-pass implementation ran up to **6.26× faster** tha
 Python 3.11 or newer is required. Install the alpha release from PyPI with:
 
 ```bash
-python -m pip install --pre bankai-fast-mcs
+python -m pip install bankai-fast-mcs
 ```
 
 ## Quick start
